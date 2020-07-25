@@ -181,6 +181,9 @@ def download_video(title: str, href: str, original_link: str, cookies: CookieJar
     # Get actual video
     r = get(url + href, cookies=cookies, stream=True)
     total_length = r.headers.get('content-length')
+    if r.status_code == 404:
+        logging.error(f"{url}{href} returned 404")
+        return
     title = convert_title(title)
     logging.info('Downloading...')
     print(f'{current}/{total} {title}')
