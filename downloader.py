@@ -12,6 +12,7 @@ import time
 
 
 def _parse_conf(conf_file: str):
+    """Parses the incoming toml config file"""
     conf = toml.load(conf_file)
 
     sid = conf['auth']['sid']
@@ -51,6 +52,7 @@ def _download_with_progress(r: Response, f: BinaryIO, total_length: int):
 
 
 class Downloader:
+    """A downloader which checks for new videos on the Digital Foundry homepage, and downloads them."""
     __scheme = 'https://'
     __domain = 'www.digitalfoundry.net'
     __url = __scheme + __domain
@@ -195,13 +197,16 @@ class Downloader:
             with open(self.__output_dir + "/" + title + '.mp4', 'wb') as f:
                 if total_length is None:  # no content length header
                     f.write(r.content)
+                    self.__notifier.notify(f'New video downloaded: {title}')
                 else:
                     _download_with_progress(r, f, int(total_length))
+                    self.__notifier.notify(f'New video downloaded: {title}')
         except Exception as ex:
             logging.error(f"Failed to download {title}: {ex}")
-        try:
-            with open(self.__cache_file, 'a') as f:
-                f.write(original_link + '\n')
-        except Exception as ex:
-            logging.error(f"Could not open cach file at {self.__cache_file}: {ex}")
+        else:
+            try:
+                with open(self.__cache_file, 'a') as f:
+                    f.write(original_link + '\n')
+            except Exception as ex:
+                logging.error(f"Could not open cache file at {self.__cache_file}: {ex}")
         print()
