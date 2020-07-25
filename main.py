@@ -10,44 +10,13 @@ from threading import Lock, Thread
 import sys
 import logging
 
-refresh_rate_min = 60
 exit_signal = False
 exit_lock = Lock()
-downloader: Downloader
-
-
-def handle_sigint(_sig, _frame):
-    global exit_signal
-    global exit_lock
-
-    print()
-    if downloader is None:
-        logging.info('Shutting down...')
-        logging.shutdown()
-        sys.exit(0)
-
-    exit_lock.acquire()
-    t = Thread(target=downloader.download)
-    t.daemon = True
-
-    if exit_signal:
-        exit_lock.release()
-        logging.info('Shutting down...')
-        logging.shutdown()
-        sys.exit(0)
-    else:
-        exit_signal = True
-        exit_lock.release()
-        logging.info("Checking now...")
-        t.start()
-
-    sleep(0.75)
-    exit_lock.acquire()
-    exit_signal = False
-    exit_lock.release()
 
 
 def main():
+    refresh_rate_min = 60
+
     root = Tk()
     root.withdraw()
     # Check for output directory
@@ -61,8 +30,38 @@ def main():
         logging.warning("No output path selected. Using current directory")
         output_path = '.'
 
-    global downloader
     downloader = Downloader("twilio.toml", output_path)
+
+    def handle_sigint(_sig, _frame):
+        print()
+        global exit_signal
+        global exit_lock
+
+        if downloader is None:
+            logging.info('Shutting down...')
+            logging.shutdown()
+            sys.exit(0)
+
+        exit_lock.acquire()
+        t = Thread(target=downloader.download)
+        t.daemon = True
+
+        if exit_signal:
+            exit_lock.release()
+            logging.info('Shutting down...')
+            logging.shutdown()
+            sys.exit(0)
+        else:
+            exit_signal = True
+            exit_lock.release()
+            logging.info("Checking now...")
+            t.start()
+
+        sleep(0.75)
+        exit_lock.acquire()
+        exit_signal = False
+        exit_lock.release()
+
     signal(SIGINT, handle_sigint)
     while True:
         downloader.download()
