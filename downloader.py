@@ -151,11 +151,11 @@ class Downloader:
                 text = button.get_text()
                 if text == self.__download_strings['other']:
                     total_downloads_available += 1
-                    if cache is not None or button['href'] not in whole_file:
+                    if (cache is not None and button['href'] not in whole_file) or cache is None:
                         other_hrefs.append(button['href'])
                 elif text == self.__download_strings['hevc']:
                     total_downloads_available += 1
-                    if cache is not None or button['href'] not in whole_file:
+                    if (cache is not None and button['href'] not in whole_file) or cache is None:
                         hevc_hrefs.append(button['href'])
             if cache is not None:
                 cache.close()
