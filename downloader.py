@@ -66,17 +66,24 @@ class Downloader:
 
     def __init__(self, conf_file: str, output_dir: str):
         browser, sid, token, to, from_ = _parse_conf(conf_file)
-        if browser == 'chrome':
-            self.__cj = chrome()
-        elif browser == 'safari':
-            self.__cj = safari()
-        elif browser == 'firefox':
-            self.__cj = firefox()
-        else:
-            raise ValueError
+        self.__browser = browser
+        self.__load_cookie_jar()
         self.__output_dir = output_dir
         self.__notifier = Notifier(sid, token, to, from_)
         self.__lock = Lock()
+
+    def __load_cookie_jar(self):
+        if self.__browser == 'chrome':
+            self.__cj = chrome()
+        elif self.__browser == 'safari':
+            self.__cj = safari()
+        elif self.__browser == 'firefox':
+            self.__cj = firefox()
+        else:
+            raise ValueError
+
+    def load_cookie_jar(self):
+        self.__load_cookie_jar()
 
     def download(self) -> None:
         """Checks the Digital Foundry homepage for new videos, and downloads them."""

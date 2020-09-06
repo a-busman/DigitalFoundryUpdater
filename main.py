@@ -55,6 +55,7 @@ def main():
             exit_signal = True
             exit_lock.release()
             logging.info("Checking now...")
+            downloader.load_cookie_jar()
             t.start()
 
         sleep(0.75)
