@@ -1,9 +1,9 @@
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from browsercookie import chrome, safari, firefox
 from requests import get, Response
 from notify import Notifier
 from threading import Lock
-from typing import BinaryIO, Tuple, List
+from typing import BinaryIO, Tuple, List, Dict
 
 import logging
 import toml
@@ -49,6 +49,15 @@ def _download_with_progress(r: Response, f: BinaryIO, total_length: int):
         sys.stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
                          f" {100 * dl // total_length:3d}%")
         sys.stdout.flush()
+
+
+def _get_art_link(art_tag: Tag) -> str:
+    """Gets the cover art link for a given video tag"""
+    style_str = art_tag['style']
+    tokens = style_str.split('(')
+    url = 'https:' + tokens[1][:-1]
+    url = url.split('.jpg')
+    return url[0] + '.jpg'
 
 
 class Downloader:
@@ -100,15 +109,13 @@ class Downloader:
             self.__lock.release()
             return
 
-        hevc_hrefs, other_hrefs = self.__get_links(r)
-        total_downloads = len(hevc_hrefs) + len(other_hrefs)
+        hrefs = self.__get_links(r)
+        total_downloads = len(hrefs)
 
         if total_downloads > 0:
             logging.info(f"Found {total_downloads} new video{'s' if total_downloads > 1 else ''}!")
-        for i in range(0, len(hevc_hrefs)):
-            self.__process_hevc_download(hevc_hrefs[i], hevc_hrefs[i], i + 1, total_downloads)
-        for i in range(0, len(other_hrefs)):
-            self.__process_other_downloads(other_hrefs[i], i + len(hevc_hrefs) + 1, total_downloads)
+        for i in range(0, len(hrefs)):
+            self.__process_downloads(hrefs[i], i + 1, total_downloads)
         logging.info("All videos downloaded.")
         self.__lock.release()
         return
@@ -135,13 +142,12 @@ class Downloader:
 
         return True
 
-    def __get_links(self, r: Response) -> Tuple[List[str], List[str]]:
+    def __get_links(self, r: Response) -> List[Dict[str, str]]:
         """Gets all the download links from a given response. If link is in cache, it won't be added to list."""
         soup = BeautifulSoup(r.content, 'html.parser')
-        all_buttons = soup.find_all('a', {'class', 'button'})
+        all_videos = soup.find_all('div', {'class', 'video'})
 
-        hevc_hrefs = []
-        other_hrefs = []
+        hrefs = []
 
         total_downloads_available = 0
 
@@ -154,16 +160,12 @@ class Downloader:
         finally:
             if cache is not None:
                 whole_file = cache.read()
-            for button in all_buttons:
-                text = button.get_text()
-                if text == self.__download_strings['other']:
-                    total_downloads_available += 1
-                    if (cache is not None and button['href'] not in whole_file) or cache is None:
-                        other_hrefs.append(button['href'])
-                elif text == self.__download_strings['hevc']:
-                    total_downloads_available += 1
-                    if (cache is not None and button['href'] not in whole_file) or cache is None:
-                        hevc_hrefs.append(button['href'])
+            for video in all_videos:
+                art_tag = video.find('a', {'class', 'cover'})
+                art = _get_art_link(art_tag)
+                total_downloads_available += 1
+                if (cache is not None and art_tag['href'] not in whole_file) or cache is None:
+                    hrefs.append({'art': art, 'href': art_tag['href']})
             if cache is not None:
                 cache.close()
 
@@ -171,23 +173,30 @@ class Downloader:
             msg = f'Only found {total_downloads_available} download(s). Make sure you are logged in to Digital Foundry in your browser'
             logging.warning(msg)
             self.__notifier.notify(msg)
-        return hevc_hrefs, other_hrefs
+        return hrefs
 
-    def __process_other_downloads(self, href: str, current: int, total: int) -> None:
+    def __process_downloads(self, href: Dict[str, str], current: int, total: int) -> None:
         """Follows HEVC link on a page with two file types"""
-        r = get(self.__url + href, cookies=self.__cj)
+        r = get(self.__url + href['href'], cookies=self.__cj)
         soup = BeautifulSoup(r.content, 'html.parser')
-        hevc_button = soup.find_all('a', class_='button wide download', limit=2)
-        self.__process_hevc_download(hevc_button[1]['href'], href, current, total)
+        dl_buttons = soup.find_all('a', class_='button wide download', limit=2)
+        hevc_button = None
+        for button in dl_buttons:
+            if button.get_text() == self.__download_strings['hevc']:
+                hevc_button = button
+                break
+        if hevc_button is None:
+            return
+        self.__process_hevc_download(hevc_button['href'], href, current, total)
 
-    def __process_hevc_download(self, href: str, original_link: str, current: int, total: int) -> None:
+    def __process_hevc_download(self, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
         """Follows Download Now link on HEVC download page"""
         r = get(self.__url + href, cookies=self.__cj)
         soup = BeautifulSoup(r.content, 'html.parser')
         download_button = soup.find('a', text=self.__download_strings['now'])
         self.__download_video(soup.title.get_text(), download_button['href'], original_link, current, total)
 
-    def __download_video(self, title: str, href: str, original_link: str, current: int, total: int) -> None:
+    def __download_video(self, title: str, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
         """Downloads a file at the given href"""
         # Get actual video
         r = get(self.__url + href, cookies=self.__cj, stream=True)
@@ -201,7 +210,8 @@ class Downloader:
         logging.info('Downloading...')
         print(f'{current}/{total} {title}')
         try:
-            with open(self.__output_dir + "/" + title + '.mp4', 'wb') as f:
+            with open(self.__output_dir + '/' + title + '.mp4', 'wb') as f:
+                self.__download_art(original_link['art'], title)
                 if total_length is None:  # no content length header
                     f.write(r.content)
                     self.__notifier.notify(f'New video downloaded: {title}')
@@ -213,7 +223,12 @@ class Downloader:
         else:
             try:
                 with open(self.__cache_file, 'a') as f:
-                    f.write(original_link + '\n')
+                    f.write(original_link['href'] + '\n')
             except Exception as ex:
                 logging.error(f"Could not open cache file at {self.__cache_file}: {ex}")
         print()
+
+    def __download_art(self, href: str, title: str):
+        art = get(href, cookies=self.__cj)
+        with open(self.__output_dir + '/' + title + '.jpg', 'wb') as f:
+            f.write(art.content)
