@@ -229,6 +229,7 @@ class Downloader:
         print()
 
     def __download_art(self, href: str, title: str):
+        """Downloads a jpg at the given href"""
         art = get(href, cookies=self.__cj)
         with open(self.__output_dir + '/' + title + '.jpg', 'wb') as f:
             f.write(art.content)
