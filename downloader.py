@@ -60,6 +60,12 @@ def _get_art_link(art_tag: Tag) -> str:
     return url[0] + '.jpg'
 
 
+def _logged_in(soup: BeautifulSoup) -> bool:
+    """Checks to see if there are any subscribe buttons on page"""
+    subscribe_button = soup.find('a', href='/sign-up')
+    return subscribe_button is None
+
+
 class Downloader:
     """A downloader which checks for new videos on the Digital Foundry homepage, and downloads them."""
     __scheme = 'https://'
@@ -68,9 +74,8 @@ class Downloader:
     __cache_file = 'cache'
 
     __download_strings = {
-        'other': 'See more download options',
         'hevc': ' Download HEVC',
-        'now': 'Download now'
+        'now': 'Download now',
     }
 
     def __init__(self, conf_file: str, output_dir: str):
@@ -114,7 +119,7 @@ class Downloader:
 
         if total_downloads > 0:
             logging.info(f"Found {total_downloads} new video{'s' if total_downloads > 1 else ''}!")
-        for i in range(0, len(hrefs)):
+        for i in range(0, total_downloads):
             self.__process_downloads(hrefs[i], i + 1, total_downloads)
         logging.info("All videos downloaded.")
         self.__lock.release()
@@ -145,6 +150,13 @@ class Downloader:
     def __get_links(self, r: Response) -> List[Dict[str, str]]:
         """Gets all the download links from a given response. If link is in cache, it won't be added to list."""
         soup = BeautifulSoup(r.content, 'html.parser')
+
+        if not _logged_in(soup):
+            msg = 'Subscribe button found. Make sure you are logged in to Digital Foundry in your browser.'
+            logging.warning(msg)
+            self.__notifier.notify(msg)
+            return []
+
         all_videos = soup.find_all('div', {'class', 'video'})
 
         hrefs = []
@@ -169,10 +181,6 @@ class Downloader:
             if cache is not None:
                 cache.close()
 
-        if total_downloads_available <= 2:
-            msg = f'Only found {total_downloads_available} download(s). Make sure you are logged in to Digital Foundry in your browser'
-            logging.warning(msg)
-            self.__notifier.notify(msg)
         return hrefs
 
     def __process_downloads(self, href: Dict[str, str], current: int, total: int) -> None:
