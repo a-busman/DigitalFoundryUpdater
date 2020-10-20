@@ -2,5 +2,5 @@
 cache
 venv
 .idea
-twilio.toml
+conf.toml
 __pycache__

@@ -8,15 +8,44 @@ from downloader import Downloader
 from threading import Lock, Thread
 
 import sys
+import toml
 import logging
 
 exit_signal = False
 exit_lock = Lock()
 
 
-def main():
-    refresh_rate_min = 60
+def _parse_conf(conf_file: str):
+    """Parses the incoming toml config file"""
+    try:
+        conf = toml.load(conf_file)
+    except Exception as e:
+        logging.warning(f"Failed to decode TOML file: {e}. Using chrome as browser.")
+        return "chrome", "", "", "", ""
+    else:
+        sid = ''
+        token = ''
+        to = ''
+        from_ = ''
 
+        if 'twilio' in conf:
+            if 'auth' in conf['twilio']:
+                sid = conf['twilio']['auth']['sid']
+                token = conf['twilio']['auth']['token']
+            if 'phone' in conf['twilio']:
+                to = conf['twilio']['phone']['to']
+                from_ = conf['twilio']['phone']['from']
+
+        browser = conf['conf']['browser']
+        if 'refresh_mins' in conf:
+            refresh_mins = conf['conf']['refresh_mins']
+        else:
+            refresh_mins = 60
+
+        return browser, refresh_mins, sid, token, to, from_
+
+
+def main():
     root = Tk()
     root.withdraw()
     # Check for output directory
@@ -30,7 +59,9 @@ def main():
         logging.warning("No output path selected. Using current directory")
         output_path = '.'
 
-    downloader = Downloader("twilio.toml", output_path)
+    browser, refresh_rate_min, sid, token, to, from_ = _parse_conf("conf.toml")
+
+    downloader = Downloader(browser, sid, token, to, from_, output_path)
 
     def handle_sigint(_sig, _frame):
         print()

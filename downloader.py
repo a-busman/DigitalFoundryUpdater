@@ -1,29 +1,13 @@
-from bs4 import BeautifulSoup, Tag
 from browsercookie import chrome, safari, firefox
 from requests import get, Response
 from notify import Notifier
 from threading import Lock
-from typing import BinaryIO, Tuple, List, Dict
+from typing import BinaryIO, List, Dict
+from sys import stdout
+from time import time
 
+import bs4
 import logging
-import toml
-import sys
-import time
-
-
-def _parse_conf(conf_file: str):
-    """Parses the incoming toml config file"""
-    conf = toml.load(conf_file)
-
-    sid = conf['auth']['sid']
-    token = conf['auth']['token']
-
-    to = conf['phone']['to']
-    from_ = conf['phone']['from']
-
-    browser = conf['conf']['browser']
-
-    return browser, sid, token, to, from_
 
 
 def _convert_title(title: str) -> str:
@@ -46,12 +30,12 @@ def _download_with_progress(r: Response, f: BinaryIO, total_length: int):
         dl += len(data)
         f.write(data)
         done = 50 * dl // total_length
-        sys.stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
-                         f" {100 * dl // total_length:3d}%")
-        sys.stdout.flush()
+        stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
+                     f" {100 * dl // total_length:3d}%")
+        stdout.flush()
 
 
-def _get_art_link(art_tag: Tag) -> str:
+def _get_art_link(art_tag: bs4.Tag) -> str:
     """Gets the cover art link for a given video tag"""
     style_str = art_tag['style']
     tokens = style_str.split('(')
@@ -60,7 +44,7 @@ def _get_art_link(art_tag: Tag) -> str:
     return url[0] + '.jpg'
 
 
-def _logged_in(soup: BeautifulSoup) -> bool:
+def _logged_in(soup: bs4.BeautifulSoup) -> bool:
     """Checks to see if there are any subscribe buttons on page"""
     subscribe_button = soup.find('a', href='/sign-up')
     return subscribe_button is None
@@ -78,8 +62,7 @@ class Downloader:
         'now': 'Download now',
     }
 
-    def __init__(self, conf_file: str, output_dir: str):
-        browser, sid, token, to, from_ = _parse_conf(conf_file)
+    def __init__(self, browser: str, sid: str, token: str, to: str, from_: str, output_dir: str):
         self.__browser = browser
         self.__load_cookie_jar()
         self.__output_dir = output_dir
@@ -139,7 +122,7 @@ class Downloader:
             logging.warning(msg)
             self.__notifier.notify(msg)
             return False
-        elif df_cookie.is_expired(time.time()):
+        elif df_cookie.is_expired(time()):
             msg = 'Digital Foundry cookie expired. Please log in to Digital Foundry in your browser.'
             logging.warning(msg)
             self.__notifier.notify(msg)
@@ -149,7 +132,7 @@ class Downloader:
 
     def __get_links(self, r: Response) -> List[Dict[str, str]]:
         """Gets all the download links from a given response. If link is in cache, it won't be added to list."""
-        soup = BeautifulSoup(r.content, 'html.parser')
+        soup = bs4.BeautifulSoup(r.content, 'html.parser')
 
         if not _logged_in(soup):
             msg = 'Subscribe button found. Make sure you are logged in to Digital Foundry in your browser.'
@@ -186,7 +169,7 @@ class Downloader:
     def __process_downloads(self, href: Dict[str, str], current: int, total: int) -> None:
         """Follows HEVC link on a page with two file types"""
         r = get(self.__url + href['href'], cookies=self.__cj)
-        soup = BeautifulSoup(r.content, 'html.parser')
+        soup = bs4.BeautifulSoup(r.content, 'html.parser')
         dl_buttons = soup.find_all('a', class_='button wide download', limit=2)
         hevc_button = None
         for button in dl_buttons:
@@ -200,7 +183,7 @@ class Downloader:
     def __process_hevc_download(self, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
         """Follows Download Now link on HEVC download page"""
         r = get(self.__url + href, cookies=self.__cj)
-        soup = BeautifulSoup(r.content, 'html.parser')
+        soup = bs4.BeautifulSoup(r.content, 'html.parser')
         download_button = soup.find('a', text=self.__download_strings['now'])
         self.__download_video(soup.title.get_text(), download_button['href'], original_link, current, total)
 

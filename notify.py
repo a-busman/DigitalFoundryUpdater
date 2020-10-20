@@ -3,12 +3,18 @@ from twilio.rest import Client
 
 class Notifier:
     def __init__(self, sid: str, token: str, to: str, from_: str):
-        print(f"sid: {sid} token: {token}")
+        if sid == '' or token == '' or to == '' or from_ == '':
+            print(f"no client created")
+            self.client = None
+            return
+
         self.to = to
         self.from_ = from_
-
         self.client = Client(sid, token)
 
     def notify(self, msg: str) -> None:
         """Sends an SMS with the given message to the object's phone number"""
+        if self.client is None:
+            return
+
         self.client.messages.create(to=self.to, from_=self.from_, body=msg)
