@@ -96,7 +96,10 @@ def main():
 
     signal(SIGINT, handle_sigint)
     while True:
-        downloader.download()
+        try:
+            downloader.download()
+        except Exception as e:
+            logging.error(f"Exception: {e}")
         logging.info(f"Sleeping for {refresh_rate_min} minutes.")
         sleep(refresh_rate_min * 60)
 
