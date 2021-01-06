@@ -37,6 +37,9 @@ def _download_with_progress(r: Response, f: BinaryIO, total_length: int):
 
 def _get_art_link(art_tag: bs4.Tag) -> str:
     """Gets the cover art link for a given video tag"""
+    if 'style' not in art_tag:
+        return ""
+
     style_str = art_tag['style']
     tokens = style_str.split('(')
     url = 'https:' + tokens[1][:-1]
@@ -202,7 +205,8 @@ class Downloader:
         print(f'{current}/{total} {title}')
         try:
             with open(self.__output_dir + '/' + title + '.mp4', 'wb') as f:
-                self.__download_art(original_link['art'], title)
+                if original_link['art'] != "":
+                    self.__download_art(original_link['art'], title)
                 if total_length is None:  # no content length header
                     f.write(r.content)
                     self.__notifier.notify(f'New video downloaded: {title}')
