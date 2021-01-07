@@ -2,7 +2,7 @@ from browsercookie import chrome, safari, firefox
 from requests import get, Response
 from notify import Notifier
 from threading import Lock
-from typing import BinaryIO, List, Dict
+from typing import BinaryIO, List, Dict, Tuple
 from sys import stdout
 from time import time
 
@@ -25,14 +25,48 @@ def _convert_title(title: str) -> str:
 
 def _download_with_progress(r: Response, f: BinaryIO, total_length: int):
     """Downloads data to a file, showing progress on stdout."""
+    chunk_size = 4096
     dl = 0
-    for data in r.iter_content(chunk_size=4096):
+    last = time()
+    last_size = 0
+    rate = 0
+    units = "B"
+    for data in r.iter_content(chunk_size=chunk_size):
         dl += len(data)
         f.write(data)
         done = 50 * dl // total_length
+        now = time()
+        diff = now - last
+        if diff > 1.0:
+            rate, units = _get_units(int(float(dl - last_size) / diff))
+            last = now
+            last_size = dl
+
         stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
-                     f" {100 * dl // total_length:3d}%")
+                     f" {100 * dl // total_length:3d}%  {rate} {units}/s")
         stdout.flush()
+
+
+def _get_units(b: int) -> Tuple[int, str]:
+    """Gets a divided byte size and unit describing the size"""
+    ret_rate = 0
+    ret_unit = "B"
+    iters = 0
+    while b > 0:
+        ret_rate = b
+        b //= 1024
+        iters += 1
+
+    if iters == 2:
+        ret_unit = "KiB"
+    elif iters == 3:
+        ret_unit = "MiB"
+    elif iters == 4:
+        ret_unit = "GiB"
+    elif iters == 5:
+        ret_unit = "TiB"
+
+    return ret_rate, ret_unit
 
 
 def _get_art_link(art_tag: bs4.Tag) -> str:
