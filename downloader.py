@@ -13,7 +13,7 @@ import logging
 def _convert_title(title: str) -> str:
     """Converts a title to a filename that can be used."""
     blacklist = ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '\0']
-    
+
     download_prefix = 'Download '
     title = title[len(download_prefix):]
     title = "".join(c for c in title if c not in blacklist)
@@ -41,7 +41,7 @@ def _download_with_progress(r: Response, f: BinaryIO, total_length: int):
             last_size = dl
 
         stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
-                     f" {100 * dl // total_length:3d}%  {rate} {units}/s")
+                     f" {100 * dl // total_length:3d}%s {rate:4d} {units}/s")
         stdout.flush()
 
 
