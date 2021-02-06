@@ -3,6 +3,12 @@
 This is a tool that will allow you to download new digital foundry videos to whichever folder you'd like! Perfect for Plex libraries and whatnot.
 You can sign up for Twilio, and this app will text you updates for whenever a new video has been downloaded, or if you need to re-log in to your DF account.
 
+## Requirements
+You will need to have pip installed, and then you can run the following to install all the required packages:
+```shell
+pip3 install -r requirements.txt
+```
+
 ## Configuration
 All you need to do is supply a TOML file for configuration as `conf.toml` in the same directory as the main.py, and you should be good.
 The Twilio configuration is optional, feel free to exclude it, but if included, this tool will text you when new videos are downloaded, or when you have to sign in again.
