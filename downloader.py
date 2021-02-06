@@ -11,15 +11,13 @@ import logging
 
 
 def _convert_title(title: str) -> str:
-    """Converts a title to a filename that can be used.
-
-        Removes '/' and replaces with '-'
-
-        Removes ':' and replaces with '|'"""
+    """Converts a title to a filename that can be used."""
+    blacklist = ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '\0']
+    
     download_prefix = 'Download '
     title = title[len(download_prefix):]
-    title = title.replace('/', '-')
-    title = title.replace(':', '|')
+    title = "".join(c for c in title if c not in blacklist)
+
     return title
 
 
