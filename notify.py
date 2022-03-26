@@ -1,12 +1,11 @@
 from twilio.rest import Client
+import logging
 
 
 class Notifier:
     def __init__(self, sid: str, token: str, to: str, from_: str):
         if sid == '' or token == '' or to == '' or from_ == '':
-            print(f"no client created")
-            self.client = None
-            return
+            raise ValueError('Not enough args to start notifier')
 
         self.to = to
         self.from_ = from_

@@ -2,12 +2,13 @@ from browsercookie import chrome, safari, firefox
 from requests import get, Response
 from notify import Notifier
 from threading import Lock
-from typing import BinaryIO, List, Dict, Tuple
+from typing import List, Dict, Tuple
 from sys import stdout
 from time import time
 
 import bs4
 import logging
+import os
 
 
 def _convert_title(title: str) -> str:
@@ -16,39 +17,40 @@ def _convert_title(title: str) -> str:
 
     download_prefix = 'Download '
     title = title[len(download_prefix):]
-    title = "".join(c for c in title if c not in blacklist)
+    title = ''.join(c for c in title if c not in blacklist)
 
     return title
 
 
-def _download_with_progress(r: Response, f: BinaryIO, total_length: int):
+def _download_with_progress(r: Response, filename: str, total_length: int):
     """Downloads data to a file, showing progress on stdout."""
     chunk_size = 4096
     dl = 0
     last = time()
     last_size = 0
     rate = 0
-    units = "B"
-    for data in r.iter_content(chunk_size=chunk_size):
-        dl += len(data)
-        f.write(data)
-        done = 50 * dl // total_length
-        now = time()
-        diff = now - last
-        if diff > 1.0:
-            rate, units = _get_units(int(float(dl - last_size) / diff))
-            last = now
-            last_size = dl
+    units = 'B'
+    with open(filename, 'wb') as f:
+        for data in r.iter_content(chunk_size=chunk_size):
+            dl += len(data)
+            f.write(data)
+            done = 50 * dl // total_length
+            now = time()
+            diff = now - last
+            if diff > 1.0:
+                rate, units = _get_units(int(float(dl - last_size) / diff))
+                last = now
+                last_size = dl
 
-        stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
-                     f" {100 * dl // total_length:3d}%s {rate:4d} {units}/s")
-        stdout.flush()
+            stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
+                         f' {100 * dl // total_length:3d}%s {rate:4d} {units}/s')
+            stdout.flush()
 
 
 def _get_units(b: int) -> Tuple[int, str]:
     """Gets a divided byte size and unit describing the size"""
     ret_rate = 0
-    ret_unit = "B"
+    ret_unit = 'B'
     iters = 0
     while b > 0:
         ret_rate = b
@@ -56,13 +58,13 @@ def _get_units(b: int) -> Tuple[int, str]:
         iters += 1
 
     if iters == 2:
-        ret_unit = "KiB"
+        ret_unit = 'KiB'
     elif iters == 3:
-        ret_unit = "MiB"
+        ret_unit = 'MiB'
     elif iters == 4:
-        ret_unit = "GiB"
+        ret_unit = 'GiB'
     elif iters == 5:
-        ret_unit = "TiB"
+        ret_unit = 'TiB'
 
     return ret_rate, ret_unit
 
@@ -70,7 +72,7 @@ def _get_units(b: int) -> Tuple[int, str]:
 def _get_art_link(art_tag: bs4.Tag) -> str:
     """Gets the cover art link for a given video tag"""
     if 'style' not in art_tag:
-        return ""
+        return ''
 
     style_str = art_tag['style']
     tokens = style_str.split('(')
@@ -94,6 +96,7 @@ class Downloader:
 
     __download_strings = {
         'hevc': ' Download HEVC',
+        'avc': ' Download h.264',
         'now': 'Download now',
     }
 
@@ -101,7 +104,11 @@ class Downloader:
         self.__browser = browser
         self.__load_cookie_jar()
         self.__output_dir = output_dir
-        self.__notifier = Notifier(sid, token, to, from_)
+        try:
+            self.__notifier = Notifier(sid, token, to, from_)
+        except ValueError:
+            self.__notifier = None
+            logging.exception(f'notifier not started')
         self.__lock = Lock()
 
     def __load_cookie_jar(self):
@@ -112,7 +119,7 @@ class Downloader:
         elif self.__browser == 'firefox':
             self.__cj = firefox()
         else:
-            raise ValueError
+            raise ValueError(f'invalid browser: {self.__browser}')
 
     def load_cookie_jar(self):
         self.__load_cookie_jar()
@@ -126,9 +133,9 @@ class Downloader:
         logging.info('Checking Digital Foundry Homepage...')
         r = get(self.__url, cookies=self.__cj)
         if not r.ok:
-            msg = 'Can\'t reach Digital Foundry Homepage.'
+            msg = "Can't reach Digital Foundry Homepage."
             logging.warning(msg)
-            self.__notifier.notify(msg)
+            self.__notify(msg)
             self.__lock.release()
             return
 
@@ -139,9 +146,14 @@ class Downloader:
             logging.info(f"Found {total_downloads} new video{'s' if total_downloads > 1 else ''}!")
         for i in range(0, total_downloads):
             self.__process_downloads(hrefs[i], i + 1, total_downloads)
-        logging.info("All videos downloaded.")
+        logging.info('All videos downloaded.')
         self.__lock.release()
         return
+
+    def __notify(self, msg: str):
+        """Notifies if the notifier is present"""
+        if self.__notifier is not None:
+            self.__notifier.notify(msg)
 
     def __has_valid_cookie(self) -> bool:
         """Checks if there is a valid digital foundry cookie in the cookie jar"""
@@ -155,12 +167,12 @@ class Downloader:
         if df_cookie is None:
             msg = 'No Digital Foundry cookie found. Please log in to Digital Foundry in your browser.'
             logging.warning(msg)
-            self.__notifier.notify(msg)
+            self.__notify(msg)
             return False
         elif df_cookie.is_expired(time()):
             msg = 'Digital Foundry cookie expired. Please log in to Digital Foundry in your browser.'
             logging.warning(msg)
-            self.__notifier.notify(msg)
+            self.__notify(msg)
             return False
 
         return True
@@ -172,7 +184,7 @@ class Downloader:
         if not _logged_in(soup):
             msg = 'Subscribe button found. Make sure you are logged in to Digital Foundry in your browser.'
             logging.warning(msg)
-            self.__notifier.notify(msg)
+            self.__notify(msg)
             return []
 
         all_videos = soup.find_all('div', {'class', 'video'})
@@ -182,11 +194,11 @@ class Downloader:
         total_downloads_available = 0
 
         cache = None
-        whole_file = ""
+        whole_file = ''
         try:
-            cache = open(self.__cache_file, "r")
-        except Exception as ex:
-            logging.error(f"Problem opening cache file from {self.__cache_file}: {ex}")
+            cache = open(self.__cache_file, 'r')
+        except Exception:
+            logging.exception(f'Problem opening cache file from {self.__cache_file}')
         finally:
             if cache is not None:
                 whole_file = cache.read()
@@ -206,17 +218,27 @@ class Downloader:
         r = get(self.__url + href['href'], cookies=self.__cj)
         soup = bs4.BeautifulSoup(r.content, 'html.parser')
         dl_buttons = soup.find_all('a', class_='button wide download', limit=2)
+        href['art'] = 'https:' + soup.find(id='thumbnails').a['href']
+        dl_button = None
         hevc_button = None
+        avc_button = None
         for button in dl_buttons:
-            if button.get_text() == self.__download_strings['hevc']:
+            text = button.get_text()
+            if text == self.__download_strings['hevc']:
                 hevc_button = button
-                break
-        if hevc_button is None:
-            return
-        self.__process_hevc_download(hevc_button['href'], href, current, total)
+            elif text == self.__download_strings['avc']:
+                avc_button = button
+        if hevc_button is not None:
+            dl_button = hevc_button
+        elif avc_button is not None:
+            dl_button = avc_button
 
-    def __process_hevc_download(self, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
-        """Follows Download Now link on HEVC download page"""
+        if dl_button is None:
+            return
+        self.__process_download_page(dl_button['href'], href, current, total)
+
+    def __process_download_page(self, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
+        """Follows Download Now link on download page"""
         r = get(self.__url + href, cookies=self.__cj)
         soup = bs4.BeautifulSoup(r.content, 'html.parser')
         download_button = soup.find('a', text=self.__download_strings['now'])
@@ -226,37 +248,50 @@ class Downloader:
         """Downloads a file at the given href"""
         # Get actual video
         r = get(self.__url + href, cookies=self.__cj, stream=True)
-        total_length = r.headers.get('content-length')
+        total_length = int(r.headers.get('content-length'))
         title = _convert_title(title)
         if r.status_code == 404:
-            logging.error(f"{self.__url}{href} returned 404")
-            self.__notifier.notify(f"{title} returned 404")
+            logging.error(f'{self.__url}{href} returned 404')
+            self.__notify(f'{title} returned 404')
             return
 
         logging.info('Downloading...')
-        print(f'{current}/{total} {title}')
+        logging.info(f'{current}/{total} {title}')
+        file_name = self.__output_dir + '/' + title + '.mp4'
         try:
-            with open(self.__output_dir + '/' + title + '.mp4', 'wb') as f:
-                if original_link['art'] != "":
-                    self.__download_art(original_link['art'], title)
-                if total_length is None:  # no content length header
-                    f.write(r.content)
-                    self.__notifier.notify(f'New video downloaded: {title}')
+            if original_link['art'] != '':
+                self.__download_art(original_link['art'], title)
+            complete = False
+            for i in range(5):
+                _download_with_progress(r, file_name, total_length)
+                actual_size = os.path.getsize(file_name)
+                if actual_size != total_length:
+                    logging.error(f'File size mismatch. Got {actual_size}, expected {total_length}. Redownloading...')
+                    r = get(self.__url + href, cookies=self.__cj, stream=True)
                 else:
-                    _download_with_progress(r, f, int(total_length))
-                    self.__notifier.notify(f'New video downloaded: {title}')
-        except Exception as ex:
-            logging.error(f"Failed to download {title}: {ex}")
+                    complete = True
+                    break
+            if not complete:
+                raise RuntimeError('Retries failed')
+            self.__notify(f'New video downloaded: {title}')
+        except Exception:
+            logging.exception(f'Failed to download {title}')
         else:
             try:
                 with open(self.__cache_file, 'a') as f:
                     f.write(original_link['href'] + '\n')
-            except Exception as ex:
-                logging.error(f"Could not open cache file at {self.__cache_file}: {ex}")
+            except Exception:
+                logging.exception(f'Could not open cache file at {self.__cache_file}')
         print()
 
     def __download_art(self, href: str, title: str):
-        """Downloads a jpg at the given href"""
+        """Downloads art at the given href"""
         art = get(href, cookies=self.__cj)
-        with open(self.__output_dir + '/' + title + '.jpg', 'wb') as f:
+        ext = ''
+        if href.find('.jpg') != -1:
+            ext = '.jpg'
+        elif href.find('.png') != -1:
+            ext = '.png'
+
+        with open(self.__output_dir + '/' + title + ext, 'wb') as f:
             f.write(art.content)

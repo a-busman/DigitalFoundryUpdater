@@ -20,8 +20,8 @@ def _parse_conf(conf_file: str):
     try:
         conf = toml.load(conf_file)
     except Exception as e:
-        logging.warning(f"Failed to decode TOML file: {e}. Using chrome as browser.")
-        return "chrome", "", "", "", ""
+        logging.warning(f'Failed to decode TOML file: {e}. Using chrome as browser.')
+        return 'chrome', 60, '', '', '', ''
     else:
         sid = ''
         token = ''
@@ -56,10 +56,10 @@ def main():
     output_path = askdirectory()
     root.update()
     if output_path == '':
-        logging.warning("No output path selected. Using current directory")
+        logging.warning('No output path selected. Using current directory')
         output_path = '.'
 
-    browser, refresh_rate_min, sid, token, to, from_ = _parse_conf("conf.toml")
+    browser, refresh_rate_min, sid, token, to, from_ = _parse_conf('conf.toml')
 
     downloader = Downloader(browser, sid, token, to, from_, output_path)
 
@@ -85,7 +85,7 @@ def main():
         else:
             exit_signal = True
             exit_lock.release()
-            logging.info("Checking now...")
+            logging.info('Checking now...')
             downloader.load_cookie_jar()
             t.start()
 
@@ -100,7 +100,7 @@ def main():
             downloader.download()
         except Exception as e:
             logging.exception(e)
-        logging.info(f"Sleeping for {refresh_rate_min} minutes.")
+        logging.info(f'Sleeping for {refresh_rate_min} minutes.')
         sleep(refresh_rate_min * 60)
 
 
