@@ -43,7 +43,7 @@ def _download_with_progress(r: Response, filename: str, total_length: int):
                 last_size = dl
 
             stdout.write(f"\r[{'=' * (done - 1)}{'=' if done == 50 else '' if done == 0 else '>'}{' ' * (50 - done)}]"
-                         f' {100 * dl // total_length:3d}%s {rate:4d} {units}/s')
+                         f' {100 * dl // total_length:3d}% {rate:4d} {units}/s')
             stdout.flush()
 
 
