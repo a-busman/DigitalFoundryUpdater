@@ -1,5 +1,4 @@
 from twilio.rest import Client
-import logging
 
 
 class Notifier:
