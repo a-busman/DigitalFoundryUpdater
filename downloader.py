@@ -5,6 +5,7 @@ from threading import Lock
 from typing import List, Dict, Tuple
 from sys import stdout
 from time import time
+from feeder import Feeder
 
 import bs4
 import logging as log
@@ -15,8 +16,6 @@ def _convert_title(title: str) -> str:
     """Converts a title to a filename that can be used."""
     blacklist = ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '\0']
 
-    download_prefix = 'Download '
-    title = title[len(download_prefix):]
     title = ''.join(c for c in title if c not in blacklist)
 
     return title
@@ -81,6 +80,7 @@ class Downloader:
     __domain = 'www.digitalfoundry.net'
     __url = __scheme + __domain
     __cache_file = 'cache'
+    __feed_url = __url + '/feed'
 
     __download_strings = {
         'hevc': ' Download HEVC',
@@ -90,13 +90,14 @@ class Downloader:
 
     def __init__(self, browser: str, notifier: Notifier, output_dir: str, collection: str):
         self.__browser = browser
-        self.__load_cookie_jar()
         self.__output_dir = output_dir
         self.__notifier = notifier
         self.__lock = Lock()
         self.__collection = collection
+        self.__cj = None
+        self.load_cookie_jar()
 
-    def __load_cookie_jar(self):
+    def load_cookie_jar(self):
         if self.__browser == 'chrome':
             self.__cj = chrome()
         elif self.__browser == 'safari':
@@ -106,9 +107,6 @@ class Downloader:
         else:
             raise ValueError(f'invalid browser: {self.__browser}')
 
-    def load_cookie_jar(self):
-        self.__load_cookie_jar()
-
     def download(self) -> None:
         """Checks the Digital Foundry homepage for new videos, and downloads them."""
         if not self.__has_valid_cookie():
@@ -116,30 +114,21 @@ class Downloader:
 
         self.__lock.acquire()
 
-        if self.__collection is None:
-            checking = 'Digital Foundry Homepage'
-            url = self.__url
-        else:
-            checking = f'{self.__collection} collection'
-            url = self.__url + '/browse/' + self.__collection
+        feeder = Feeder(self.__cj, self.__cache_file)
 
-        log.info(f'Checking {checking}...')
-        r = get(url, cookies=self.__cj)
-
-        if not r.ok:
-            msg = "Can't reach Digital Foundry Homepage."
-            log.warning(msg)
-            self.__notify(msg)
+        try:
+            links = feeder.get_links()
+        except ValueError as e:
+            log.error(e)
             self.__lock.release()
             return
 
-        hrefs = self.__get_links(r)
-        total_downloads = len(hrefs)
+        total_downloads = len(links)
 
         if total_downloads > 0:
             log.info(f"Found {total_downloads} new video{'s' if total_downloads > 1 else ''}!")
         for i in range(0, total_downloads):
-            self.__process_downloads(hrefs[i], i + 1, total_downloads)
+            self.__download_video(links[i], i + 1, total_downloads)
         log.info('All videos downloaded.')
         self.__lock.release()
         return
@@ -171,84 +160,14 @@ class Downloader:
 
         return True
 
-    def __get_links(self, r: Response) -> List[Dict[str, str]]:
-        """Gets all the download links from a given response. If link is in cache, it won't be added to list."""
-        soup = bs4.BeautifulSoup(r.content, 'html.parser')
-
-        if not _logged_in(soup):
-            msg = 'Subscribe button found. Make sure you are logged in to Digital Foundry in your browser.'
-            log.warning(msg)
-            self.__notify(msg)
-            return []
-
-        # Main page grid items are only "featured". We want the regular video categories.
-        if self.__collection is None:
-            all_videos = soup.find_all('div', {'class', 'video'})
-        else:
-            all_videos = soup.find_all('div', {'class', 'video-grid-item'})
-
-        hrefs = []
-
-        total_downloads_available = 0
-
-        cache = None
-        whole_file = ''
-        try:
-            cache = open(self.__cache_file, 'r')
-        except Exception:
-            log.exception(f'Problem opening cache file from {self.__cache_file}')
-        finally:
-            if cache is not None:
-                whole_file = cache.read()
-            for video in all_videos:
-                art_tag = video.find('a', {'class', 'cover'})
-                total_downloads_available += 1
-                if (cache is not None and art_tag['href'] not in whole_file) or cache is None:
-                    hrefs.append({'href': art_tag['href']})
-            if cache is not None:
-                cache.close()
-
-        return hrefs
-
-    def __process_downloads(self, href: Dict[str, str], current: int, total: int) -> None:
-        """Follows HEVC link on a page with two file types"""
-        r = get(self.__url + href['href'], cookies=self.__cj)
-        soup = bs4.BeautifulSoup(r.content, 'html.parser')
-        dl_buttons = soup.find_all('a', class_='button wide download', limit=2)
-        href['art'] = 'https:' + soup.find(id='thumbnails').a['href']
-        dl_button = None
-        hevc_button = None
-        avc_button = None
-        for button in dl_buttons:
-            text = button.get_text()
-            if text == self.__download_strings['hevc']:
-                hevc_button = button
-            elif text == self.__download_strings['avc']:
-                avc_button = button
-        if hevc_button is not None:
-            dl_button = hevc_button
-        elif avc_button is not None:
-            dl_button = avc_button
-
-        if dl_button is None:
-            return
-        self.__process_download_page(dl_button['href'], href, current, total)
-
-    def __process_download_page(self, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
-        """Follows Download Now link on download page"""
-        r = get(self.__url + href, cookies=self.__cj)
-        soup = bs4.BeautifulSoup(r.content, 'html.parser')
-        download_button = soup.find('a', text=self.__download_strings['now'])
-        self.__download_video(soup.title.get_text(), download_button['href'], original_link, current, total)
-
-    def __download_video(self, title: str, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
+    def __download_video(self, link: Dict[str, str], current: int, total: int) -> None:
         """Downloads a file at the given href"""
         # Get actual video
-        r = get(self.__url + href, cookies=self.__cj, stream=True)
+        r = get(link['vid_url'], cookies=self.__cj, stream=True)
         total_length = int(r.headers.get('content-length'))
-        title = _convert_title(title)
+        title = _convert_title(link['title'])
         if r.status_code == 404:
-            log.error(f'{self.__url}{href} returned 404')
+            log.error(f"{link['vid_url']} returned 404")
             self.__notify(f'{title} returned 404')
             return
 
@@ -256,15 +175,15 @@ class Downloader:
         log.info(f'{current}/{total} {title}')
         file_name = self.__output_dir + '/' + title + '.mp4'
         try:
-            if original_link['art'] != '':
-                self.__download_art(original_link['art'], title)
+            if link['img_url'] != '':
+                self.__download_art(link['img_url'], title)
             complete = False
             for i in range(5):
                 _download_with_progress(r, file_name, total_length)
                 actual_size = os.path.getsize(file_name)
                 if actual_size != total_length:
                     log.error(f'File size mismatch. Got {actual_size}, expected {total_length}. Redownloading...')
-                    r = get(self.__url + href, cookies=self.__cj, stream=True)
+                    r = get(link['vid_url'], cookies=self.__cj, stream=True)
                 else:
                     complete = True
                     break
@@ -276,18 +195,18 @@ class Downloader:
         else:
             try:
                 with open(self.__cache_file, 'a') as f:
-                    f.write(original_link['href'] + '\n')
+                    f.write(link['path'] + '\n')
             except Exception:
                 log.exception(f'Could not open cache file at {self.__cache_file}')
         print()
 
-    def __download_art(self, href: str, title: str):
+    def __download_art(self, link: str, title: str):
         """Downloads art at the given href"""
-        art = get(href, cookies=self.__cj)
+        art = get(link, cookies=self.__cj)
         ext = ''
-        if href.find('.jpg') != -1:
+        if link.find('.jpg') != -1:
             ext = '.jpg'
-        elif href.find('.png') != -1:
+        elif link.find('.png') != -1:
             ext = '.png'
 
         with open(self.__output_dir + '/' + title + ext, 'wb') as f:

@@ -2,6 +2,7 @@ toml
 twilio
 beautifulsoup4
 requests
+feedparser
 
 # The latest has not yet been published, and this version includes a fix for decrypting cookies
 # on Windows with Chrome 80+
