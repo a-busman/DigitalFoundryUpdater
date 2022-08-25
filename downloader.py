@@ -164,7 +164,6 @@ class Downloader:
         """Downloads a file at the given href"""
         # Get actual video
         r = get(link['vid_url'], cookies=self.__cj, stream=True)
-        total_length = int(r.headers.get('content-length'))
         title = _convert_title(link['title'])
         if r.status_code == 404:
             log.error(f"{link['vid_url']} returned 404")
@@ -179,6 +178,7 @@ class Downloader:
                 self.__download_art(link['img_url'], title)
             complete = False
             for i in range(5):
+                total_length = int(r.headers.get('content-length'))
                 _download_with_progress(r, file_name, total_length)
                 actual_size = os.path.getsize(file_name)
                 if actual_size != total_length:
