@@ -10,13 +10,10 @@ import bs4
 import logging as log
 import os
 
-
 def _convert_title(title: str) -> str:
     """Converts a title to a filename that can be used."""
     blacklist = ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '\0']
 
-    download_prefix = 'Download '
-    title = title[len(download_prefix):]
     title = ''.join(c for c in title if c not in blacklist)
 
     return title
@@ -238,6 +235,7 @@ class Downloader:
         # Get actual video
         r = get(href, cookies=self.__cj, stream=True)
         total_length = int(r.headers.get('content-length'))
+        # print(title)
         title = _convert_title(title)
         if r.status_code == 404:
             log.error(f'{self.__url}{href} returned 404')
