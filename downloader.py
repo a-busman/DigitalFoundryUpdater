@@ -201,10 +201,7 @@ class Downloader:
             if cache is not None:
                 whole_file = cache.read()
             for video in all_videos:
-                art_tag = video.find('a', {'class', 'cover'})
                 total_downloads_available += 1
-                if (cache is not None and art_tag['href'] not in whole_file) or cache is None:
-                    hrefs.append({'href': art_tag['href']})
             if cache is not None:
                 cache.close()
 
@@ -215,7 +212,6 @@ class Downloader:
         r = get(self.__url + href['href'], cookies=self.__cj)
         soup = bs4.BeautifulSoup(r.content, 'html.parser')
         dl_buttons = soup.find_all('a', class_='button wide download', limit=2)
-        href['art'] = 'https:' + soup.find(id='thumbnails').a['href']
         dl_button = None
         hevc_button = None
         avc_button = None
@@ -256,8 +252,6 @@ class Downloader:
         log.info(f'{current}/{total} {title}')
         file_name = self.__output_dir + '/' + title + '.mp4'
         try:
-            if original_link['art'] != '':
-                self.__download_art(original_link['art'], title)
             complete = False
             for i in range(5):
                 _download_with_progress(r, file_name, total_length)
@@ -280,15 +274,3 @@ class Downloader:
             except Exception:
                 log.exception(f'Could not open cache file at {self.__cache_file}')
         print()
-
-    def __download_art(self, href: str, title: str):
-        """Downloads art at the given href"""
-        art = get(href, cookies=self.__cj)
-        ext = ''
-        if href.find('.jpg') != -1:
-            ext = '.jpg'
-        elif href.find('.png') != -1:
-            ext = '.png'
-
-        with open(self.__output_dir + '/' + title + ext, 'wb') as f:
-            f.write(art.content)
