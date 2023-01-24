@@ -100,8 +100,6 @@ class Downloader:
     def __load_cookie_jar(self):
         if self.__browser == 'chrome':
             self.__cj = chrome()
-        elif self.__browser == 'safari':
-            self.__cj = safari()
         elif self.__browser == 'firefox':
             self.__cj = firefox()
         else:
