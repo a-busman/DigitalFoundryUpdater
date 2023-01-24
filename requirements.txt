@@ -2,7 +2,4 @@ toml
 twilio
 beautifulsoup4
 requests
-
-# The latest has not yet been published, and this version includes a fix for decrypting cookies
-# on Windows with Chrome 80+
-https://github.com/richardpenman/browsercookie/archive/c04a26ffc6f45b34f699ce0addcc7cb37714b647.zip
+browser_cookie3

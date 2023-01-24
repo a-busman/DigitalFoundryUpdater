@@ -1,4 +1,4 @@
-from browsercookie import chrome, safari, firefox
+from browser_cookie3 import chrome, firefox
 from requests import get, Response
 from notify import Notifier
 from threading import Lock
@@ -80,11 +80,12 @@ class Downloader:
     __scheme = 'https://'
     __domain = 'www.digitalfoundry.net'
     __url = __scheme + __domain
+    __home_url = __url + '/archive'
     __cache_file = 'cache'
 
     __download_strings = {
-        'hevc': ' Download HEVC',
-        'avc': ' Download h.264',
+        'hevc': 'Download HEVC',
+        'avc': 'Download h.264',
         'now': 'Download now',
     }
 
@@ -118,7 +119,7 @@ class Downloader:
 
         if self.__collection is None:
             checking = 'Digital Foundry Homepage'
-            url = self.__url
+            url = self.__home_url
         else:
             checking = f'{self.__collection} collection'
             url = self.__url + '/browse/' + self.__collection
@@ -183,7 +184,7 @@ class Downloader:
 
         # Main page grid items are only "featured". We want the regular video categories.
         if self.__collection is None:
-            all_videos = soup.find_all('div', {'class', 'video'})
+            all_videos = soup.find_all('div', {'class', 'summary'})
         else:
             all_videos = soup.find_all('div', {'class', 'video-grid-item'})
 
@@ -201,7 +202,10 @@ class Downloader:
             if cache is not None:
                 whole_file = cache.read()
             for video in all_videos:
+                art_tag = video.find('a', {'class', 'link_overlay'})
                 total_downloads_available += 1
+                if (cache is not None and art_tag['href'] not in whole_file) or cache is None:
+                    hrefs.append({'href': art_tag['href']})
             if cache is not None:
                 cache.close()
 
@@ -209,9 +213,9 @@ class Downloader:
 
     def __process_downloads(self, href: Dict[str, str], current: int, total: int) -> None:
         """Follows HEVC link on a page with two file types"""
-        r = get(self.__url + href['href'], cookies=self.__cj)
+        r = get(href['href'], cookies=self.__cj)
         soup = bs4.BeautifulSoup(r.content, 'html.parser')
-        dl_buttons = soup.find_all('a', class_='button wide download', limit=2)
+        dl_buttons = soup.find_all('a', class_='button primary download', limit=2)
         dl_button = None
         hevc_button = None
         avc_button = None
@@ -228,19 +232,13 @@ class Downloader:
 
         if dl_button is None:
             return
-        self.__process_download_page(dl_button['href'], href, current, total)
 
-    def __process_download_page(self, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
-        """Follows Download Now link on download page"""
-        r = get(self.__url + href, cookies=self.__cj)
-        soup = bs4.BeautifulSoup(r.content, 'html.parser')
-        download_button = soup.find('a', text=self.__download_strings['now'])
-        self.__download_video(soup.title.get_text(), download_button['href'], original_link, current, total)
+        self.__download_video(soup.title.get_text(), dl_button['href'], href, current, total)
 
     def __download_video(self, title: str, href: str, original_link: Dict[str, str], current: int, total: int) -> None:
         """Downloads a file at the given href"""
         # Get actual video
-        r = get(self.__url + href, cookies=self.__cj, stream=True)
+        r = get(href, cookies=self.__cj, stream=True)
         total_length = int(r.headers.get('content-length'))
         title = _convert_title(title)
         if r.status_code == 404:
